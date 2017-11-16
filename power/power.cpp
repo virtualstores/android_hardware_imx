@@ -42,6 +42,7 @@ static char *cpu_path_max =
 static pthread_mutex_t low_power_mode_lock = PTHREAD_MUTEX_INITIALIZER;
 static int boost_fd = -1;
 static int boost_warned;
+static int sustained_performance_mode = 0;
 static sp<SwitchprofileThread> switchprofile;
 
 static void getcpu_gov(char *s, int size)
@@ -89,6 +90,8 @@ static void fsl_power_init(struct power_module *module)
     //create power profile switch thread
     switchprofile = new SwitchprofileThread();
     switchprofile->do_setproperty(PROP_CPUFREQGOV, PROP_VAL);
+
+    ALOGI("Virtual stores power HAL initing");
 }
 
 static void fsl_power_set_interactive(struct power_module *module, int on)
@@ -121,7 +124,23 @@ static void fsl_power_hint(struct power_module *module, power_hint_t hint,
              }
         pthread_mutex_unlock(&low_power_mode_lock);
         break;
- 
+    /* While system in sustain perfromance lower clock rates to low power mode rates
+       Doesnt touch the GPU clock rates atm, this needs more testing..
+    */
+    case POWER_HINT_SUSTAINED_PERFORMANCE:
+	pthread_mutex_lock(&low_power_mode_lock);
+	//This means we wanna turn perfromance mode on
+	if(data && sustained_performance_mode == 0) {
+		sysfs_write(cpu_path_max, LOW_POWER_MAX_FREQ);
+		sustained_performance_mode = 1;
+		ALOGW("Sustained mode enabled");
+	} else if(sustained_performance_mode == 1) {
+		sysfs_write(cpu_path_max, NORMAL_MAX_FREQ);
+		sustained_performance_mode = 0;
+		ALOGW("Sutained mode disabled");
+	}	
+	pthread_mutex_unlock(&low_power_mode_lock);
+	break;
     default:
         break;
     }
